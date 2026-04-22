@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Virtual Oscilloscope - Microphone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: #ccc;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ── HEADER ── */
+        .header {
+            background: #1a1a2e;
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #0f0;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            color: #0f0;
+            letter-spacing: 2px;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f00;
+            transition: background 0.3s;
+        }
+
+        .status-dot.active {
+            background: #0f0;
+            box-shadow: 0 0 8px #0f0;
+        }
+
+        /* ── LAYOUT ── */
+        .main {
+            display: flex;
+            height: calc(100vh - 45px);
+        }
+
+        /* ── LEFT PANEL ── */
+        .panel {
+            width: 260px;
+            background: #111;
+            border-right: 1px solid #333;
+            padding: 12px;
+            overflow-y: auto;
+        }
+
+        .panel h3 {
+            color: #0f0;
+            font-size: 13px;
+            margin: 14px 0 6px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .panel label {
+            display: block;
+            font-size: 12px;
+            margin: 6px 0 2px;
+            color: #aaa;
+        }
+
+        .panel input[type="range"] {
+            width: 100%;
+            accent-color: #0f0;
+        }
+
+        .panel select,
+        .panel button {
+            width: 100%;
+            padding: 6px;
+            margin: 4px 0;
+            background: #1a1a2e;
+            color: #ddd;
+            border: 1px solid #333;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .panel button:hover {
+            background: #0f0;
+            color: #000;
+        }
+
+        .panel .val {
+            float: right;
+            color: #0f0;
+        }
+
+        .btn-start {
+            background: #060;
+            color: #0f0;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 10px;
+        }
+
+        .btn-start:hover {
+            background: #0f0;
+            color: #000;
+        }
+
+        .btn-stop {
+            background: #600;
+            color: #f66;
+            font-weight: bold;
+        }
+
+        .btn-stop:hover {
+            background: #f00;
+            color: #fff;
+        }
+
+        /* ── CANVAS AREA ── */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .canvas-area canvas {
+            background: #000;
+            border: 1px solid #1a1a2e;
+            border-radius: 6px;
+            width: 100%;
+        }
+
+        /* ── MEASUREMENTS ── */
+        .measurements {
+            display: flex;
+            gap: 20px;
+            padding: 8px 14px;
+            background: #111;
+            border-radius: 6px;
+            border: 1px solid #222;
+            flex-wrap: wrap;
+        }
+
+        .meas-item {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .meas-item span {
+            color: #0f0;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* ── TABS ── */
+        .tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tabs button {
+            padding: 6px 16px;
+            background: #1a1a2e;
+            color: #888;
+            border: 1px solid #333;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .tabs button.active {
+            background: #000;
+            color: #0f0;
+            border-bottom: 1px solid #000;
+        }
+
+        /* ── TOOLTIP ── */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: #0f0;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            border: 1px solid #0f0;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- HEADER -->
+    <div class="header">
+        <h1>⚡ VIRTUAL OSCILLOSCOPE</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Stopped</span>
+            <span id="sampleRate" style="color:#0f0"></span>
+        </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+
+        <!-- LEFT PANEL -->
+        <div class="panel">
+            <button class="btn-start" id="btnStart">▶ START</button>
+            <button class="btn-stop" id="btnStop" style="display:none">■ STOP</button>
+
+            <h3>⏱ Timebase</h3>
+            <label>Time/Div <span class="val" id="valTime">1.0 ms</span></label>
+            <input type="range" id="timeDiv" min="0.1" max="20" step="0.1" value="1">
+            <label>Horizontal Position <span class="val" id="valHpos">0</span></label>
+            <input type="range" id="hPos" min="-500" max="500" value="0">
+
+            <h3>📊 Channel</h3>
+            <label>Volts/Div <span class="val" id="valVolts">50%</span></label>
+            <input type="range" id="voltsDiv" min="5" max="100" value="50">
+            <label>Vertical Offset <span class="val" id="valVoff">0</span></label>
+            <input type="range" id="vOffset" min="-150" max="150" value="0">
+            <label>Coupling</label>
+            <select id="coupling">
+                <option value="ac">AC</option>
+                <option value="dc">DC</option>
+            </select>
+
+            <h3>⚡ Trigger</h3>
+            <label>Mode</label>
+            <select id="trigMode">
+                <option value="auto">Auto</option>
+                <option value="normal">Normal</option>
+                <option value="single">Single</option>
+            </select>
+            <label>Edge</label>
+            <select id="trigEdge">
+                <option value="rising">Rising ↑</option>
+                <option value="falling">Falling ↓</option>
+            </select>
+            <label>Threshold <span class="val" id="valTrig">50%</span></label>
+            <input type="range" id="trigThreshold" min="0" max="100" value="50">
+
+            <h3>🎨 Display</h3>
+            <label>Trace Color</label>
+            <select id="traceColor">
+                <option value="#00ff00">Green</option>
+                <option value="#00ffff">Cyan</option>
+                <option value="#ffff00">Yellow</option>
+                <option value="#ff6600">Orange</option>
+                <option value="#ff00ff">Magenta</option>
+                <option value="#ffffff">White</option>
+            </select>
+            <label>Line Width <span class="val" id="valLine">2</span></label>
+            <input type="range" id="lineWidth" min="1" max="5" value="2">
+            <label>Phosphor Persistence <span class="val" id="valPersist">0%</span></label>
+            <input type="range" id="persistence" min="0" max="95" value="0">
+            <label>Grid Brightness <span class="val" id="valGrid">30%</span></label>
+            <input type="range" id="gridBright" min="0" max="100" value="30">
+
+            <h3>🔧 Tools</h3>
+            <button id="btnFreeze">⏸ Freeze</button>
+            <button id="btnScreenshot">📷 Screenshot</button>
+            <button id="btnSaveCSV">💾 Save CSV</button>
+            <button id="btnSaveWAV">🎵 Save WAV</button>
+        </div>
+
+        <!-- CANVAS AREA -->
+        <div class="canvas-area">
+            <div class="tabs">
+                <button class="active" id="tabTime">Waveform</button>
+                <button id="tabFFT">FFT Spectrum</button>
+                <button id="tabBoth">Both</button>
+            </div>
+
+            <canvas id="scopeCanvas" height="320"></canvas>
+            <canvas id="fftCanvas" height="180" style="display:none"></canvas>
+
+            <div class="measurements">
+                <div class="meas-item">Freq: <span id="mFreq">-- Hz</span></div>
+                <div class="meas-item">Period: <span id="mPeriod">-- ms</span></div>
+                <div class="meas-item">Vpp: <span id="mVpp">--</span></div>
+                <div class="meas-item">Vrms: <span id="mVrms">--</span></div>
+                <div class="meas-item">Vmax: <span id="mVmax">--</span></div>
+                <div class="meas-item">Vmin: <span id="mVmin">--</span></div>
+                <div class="meas-item">DC Avg: <span id="mDC">--</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOOLTIP -->
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // ═══════════════════════════════════════════
+        //  AUDIO CONTEXT & NODES
+        // ═══════════════════════════════════════════
+        let audioCtx, analyser, micStream, sourceNode;
+        let running = false, frozen = false, singleTriggered = false;
+        let lastWaveform = null, lastFreqData = null;
+        let audioBuffer = [];
+        const FFT_SIZE = 8192;
+
+        // ═══════════════════════════════════════════
+        //  DOM REFS
+        // ═══════════════════════════════════════════
+        const scopeCanvas = document.getElementById("scopeCanvas");
+        const fftCanvas = document.getElementById("fftCanvas");
+        const sctx = scopeCanvas.getContext("2d");
+        const fctx = fftCanvas.getContext("2d");
+
+        const btnStart = document.getElementById("btnStart");
+        const btnStop = document.getElementById("btnStop");
+        const statusDot = document.getElementById("statusDot");
+        const statusText = document.getElementById("statusText");
+        const tooltip = document.getElementById("tooltip");
+
+        // ═══════════════════════════════════════════
+        //  START / STOP
+        // ═══════════════════════════════════════════
+        btnStart.onclick = async () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                });
+                sourceNode = audioCtx.createMediaStreamSource(micStream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = FFT_SIZE;
+                analyser.smoothingTimeConstant = 0.3;
+                sourceNode.connect(analyser);
+
+                document.getElementById("sampleRate").textContent = audioCtx.sampleRate + " Hz";
+
+                running = true;
+                frozen = false;
+                singleTriggered = false;
+                audioBuffer = [];
+                btnStart.style.display = "none";
+                btnStop.style.display = "block";
+                statusDot.classList.add("active");
+                statusText.textContent = "Running";
+
+                draw();
+            } catch (e) {
+                alert("Microphone access denied or error:\n" + e.message);
+            }
+        };
+
+        btnStop.onclick = () => {
+            running = false;
+            if (micStream) micStream.getTracks().forEach(t => t.stop());
+            if (audioCtx) audioCtx.close();
+            btnStart.style.display = "block";
+            btnStop.style.display = "none";
+            statusDot.classList.remove("active");
+            statusText.textContent = "Stopped";
+        };
+
+        // ═══════════════════════════════════════════
+        //  TABS
+        // ═══════════════════════════════════════════
+        let viewMode = "time";
+        document.getElementById("tabTime").onclick = () => { viewMode = "time"; updateTabs(); };
+        document.getElementById("tabFFT").onclick = () => { viewMode = "fft"; updateTabs(); };
+        document.getElementById("tabBoth").onclick = () => { viewMode = "both"; updateTabs(); };
+
+        function updateTabs() {
+            document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+            if (viewMode === "time") {
+                document.getElementById("tabTime").classList.add("active");
+                scopeCanvas.style.display = "block"; scopeCanvas.height = 420;
+                fftCanvas.style.display = "none";
+            } else if (viewMode === "fft") {
+                document.getElementById("tabFFT").classList.add("active");
+                scopeCanvas.style.display = "none";
+                fftCanvas.style.display = "block"; fftCanvas.height = 420;
+            } else {
+                document.getElementById("tabBoth").classList.add("active");
+                scopeCanvas.style.display = "block"; scopeCanvas.height = 260;
+                fftCanvas.style.display = "block"; fftCanvas.height = 180;
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        //  CONTROLS – Live value display
+        // ═══════════════════════════════════════════
+        document.getElementById("timeDiv").oninput = e => {
+            document.getElementById("valTime").textContent = (+e.target.value).toFixed(1) + " ms";
+        };
+        document.getElementById("hPos").oninput = e => {
+            document.getElementById("valHpos").textContent = e.target.value;
+        };
+        document.getElementById("voltsDiv").oninput = e => {
+            document.getElementById("valVolts").textContent = e.target.value + "%";
+        };
+        document.getElementById("vOffset").oninput = e => {
+            document.getElementById("valVoff").textContent = e.target.value;
+        };
+        document.getElementById("trigThreshold").oninput = e => {
+            document.getElementById("valTrig").textContent = e.target.value + "%";
+        };
+        document.getElementById("lineWidth").oninput = e => {
+            document.getElementById("valLine").textContent = e.target.value;
+        };
+        document.getElementById("persistence").oninput = e => {
+            document.getElementById("valPersist").textContent = e.target.value + "%";
+        };
+        document.getElementById("gridBright").oninput = e => {
+            document.getElementById("valGrid").textContent = e.target.value + "%";
+        };
+
+        // ═══════════════════════════════════════════
+        //  FREEZE
+        // ═══════════════════════════════════════════
+        document.getElementById("btnFreeze").onclick = () => {
+            frozen = !frozen;
+            document.getElementById("btnFreeze").textContent = frozen ? "▶ Unfreeze" : "⏸ Freeze";
+            statusText.textContent = frozen ? "Frozen" : "Running";
+        };
+
+        // ═══════════════════════════════════════════
+        //  TRIGGER
+        // ═══════════════════════════════════════════
+        function findTrigger(data) {
+            const mode = document.getElementById("trigMode").value;
+            const edge = document.getElementById("trigEdge").value;
+            const th = Math.round((+document.getElementById("trigThreshold").value / 100) * 255);
+
+            for (let i = 1; i < data.length - 1; i++) {
+                if (edge === "rising" && data[i - 1] < th && data[i] >= th) return i;
+                if (edge === "falling" && data[i - 1] > th && data[i] <= th) return i;
+            }
+            return mode === "auto" ? 0 : -1;
+        }
+
+        // ═══════════════════════════════════════════
+        //  AC COUPLING – remove DC offset
+        // ═══════════════════════════════════════════
+        function acCouple(data) {
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) sum += data[i];
+            const dc = sum / data.length;
+            const out = new Float32Array(data.length);
+            for (let i = 0; i < data.length; i++) out[i] = data[i] - dc;
+            return out;
+        }
+
+        // ═══════════════════════════════════════════
+        //  MEASUREMENTS
+        // ═══════════════════════════════════════════
+        function computeMeasurements(data) {
+            let min = 255, max = 0, sum = 0, sqSum = 0;
+            for (let i = 0; i < data.length; i++) {
+                if (data[i] < min) min = data[i];
+                if (data[i] > max) max = data[i];
+                sum += data[i];
+                sqSum += data[i] * data[i];
+            }
+            const avg = sum / data.length;
+            const rms = Math.sqrt(sqSum / data.length);
+            const vpp = max - min;
+
+            // Frequency estimation (zero-crossing)
+            const mid = avg;
+            let crossings = 0;
+            for (let i = 1; i < data.length; i++) {
+                if ((data[i - 1] < mid && data[i] >= mid)) crossings++;
+            }
+            const sr = audioCtx ? audioCtx.sampleRate : 44100;
+            const freq = crossings > 0 ? (crossings * sr) / (2 * data.length) : 0;
+
+            document.getElementById("mFreq").textContent = freq > 0 ? freq.toFixed(1) + " Hz" : "-- Hz";
+            document.getElementById("mPeriod").textContent = freq > 0 ? (1000 / freq).toFixed(2) + " ms" : "-- ms";
+            document.getElementById("mVpp").textContent = ((vpp / 255) * 100).toFixed(1) + "%";
+            document.getElementById("mVrms").textContent = ((rms / 255) * 100).toFixed(1) + "%";
+            document.getElementById("mVmax").textContent = ((max / 255) * 100).toFixed(1) + "%";
+            document.getElementById("mVmin").textContent = ((min / 255) * 100).toFixed(1) + "%";
+            document.getElementById("mDC").textContent = ((avg / 255) * 100).toFixed(1) + "%";
+        }
+
+        // ═══════════════════════════════════════════
+        //  DRAW GRID
+        // ═══════════════════════════════════════════
+        function drawGrid(ctx, w, h) {
+            const bright = +document.getElementById("gridBright").value;
+            const alpha = (bright / 100).toFixed(2);
+
+            // Major grid
+            ctx.strokeStyle = `rgba(0,255,0,${alpha * 0.35})`;
+            ctx.lineWidth = 0.5;
+            const divX = 10, divY = 8;
+            for (let i = 0; i <= divX; i++) {
+                const x = (w / divX) * i;
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            for (let i = 0; i <= divY; i++) {
+                const y = (h / divY) * i;
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            }
+
+            // Center cross – brighter
+            ctx.strokeStyle = `rgba(0,255,0,${alpha * 0.7})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+
+            // Tick marks on center lines
+            ctx.strokeStyle = `rgba(0,255,0,${alpha * 0.5})`;
+            for (let i = 0; i < w; i += w / 50) {
+                ctx.beginPath(); ctx.moveTo(i, h / 2 - 3); ctx.lineTo(i, h / 2 + 3); ctx.stroke();
+            }
+            for (let i = 0; i < h; i += h / 40) {
+                ctx.beginPath(); ctx.moveTo(w / 2 - 3, i); ctx.lineTo(w / 2 + 3, i); ctx.stroke();
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        //  DRAW TRIGGER LINE
+        // ═══════════════════════════════════════════
+        function drawTriggerLine(ctx, w, h) {
+            const th = (+document.getElementById("trigThreshold").value / 100) * h;
+            const y = h - th;
+            ctx.strokeStyle = "rgba(255,100,0,0.6)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "#f60";
+            ctx.font = "10px Arial";
+            ctx.fillText("T", 4, y - 4);
+        }
+
+        // ═══════════════════════════════════════════
+        //  MAIN DRAW LOOP
+        // ═══════════════════════════════════════════
+        function draw() {
+            if (!running) return;
+            requestAnimationFrame(draw);
+            if (frozen) return;
+
+            const bufLen = analyser.fftSize;
+            const timeDomain = new Uint8Array(bufLen);
+            const freqDomain = new Uint8Array(analyser.frequencyBinCount);
+
+            analyser.getByteTimeDomainData(timeDomain);
+            analyser.getByteFrequencyData(freqDomain);
+
+            // Store for saving
+            lastWaveform = timeDomain;
+            lastFreqData = freqDomain;
+
+            // Store raw float data for WAV
+            const floatData = new Float32Array(bufLen);
+            analyser.getFloatTimeDomainData(floatData);
+            audioBuffer.push(...floatData);
+            if (audioBuffer.length > audioCtx.sampleRate * 10) {
+                audioBuffer = audioBuffer.slice(-audioCtx.sampleRate * 10);
+            }
+
+            // Trigger
+            const trigMode = document.getElementById("trigMode").value;
+            const trigIdx = findTrigger(timeDomain);
+
+            if (trigMode === "normal" && trigIdx === -1) return;
+            if (trigMode === "single") {
+                if (singleTriggered) return;
+                if (trigIdx === -1) return;
+                singleTriggered = true;
+                statusText.textContent = "Triggered (Single)";
+            }
+
+            computeMeasurements(timeDomain);
+
+            // ── TIME DOMAIN ──
+            if (viewMode === "time" || viewMode === "both") {
+                const w = scopeCanvas.width = scopeCanvas.clientWidth;
+                const h = scopeCanvas.height;
+                const persist = +document.getElementById("persistence").value / 100;
+
+                if (persist > 0) {
+                    sctx.fillStyle = `rgba(0,0,0,${1 - persist})`;
+                    sctx.fillRect(0, 0, w, h);
+                } else {
+                    sctx.fillStyle = "#000";
+                    sctx.fillRect(0, 0, w, h);
+                }
+
+                drawGrid(sctx, w, h);
+                drawTriggerLine(sctx, w, h);
+
+                const timeScale = +document.getElementById("timeDiv").value;
+                const hPos = +document.getElementById("hPos").value;
+                const volts = +document.getElementById("voltsDiv").value / 50;
+                const vOff = +document.getElementById("vOffset").value;
+                const coupling = document.getElementById("coupling").value;
+                const color = document.getElementById("traceColor").value;
+                const lw = +document.getElementById("lineWidth").value;
+
+                let data = timeDomain;
+                if (coupling === "ac") {
+                    const acData = acCouple(data);
+                    data = new Uint8Array(acData.length);
+                    for (let i = 0; i < acData.length; i++) data[i] = Math.max(0, Math.min(255, acData[i] + 128));
+                }
+
+                const startIdx = Math.max(0, (trigIdx !== -1 ? trigIdx : 0) + Math.round(hPos));
+
+                // Glow effect
+                sctx.shadowColor = color;
+                sctx.shadowBlur = 8;
+                sctx.strokeStyle = color;
+                sctx.lineWidth = lw;
+                sctx.beginPath();
+
+                for (let x = 0; x < w; x++) {
+                    const dataIdx = startIdx + Math.round(x * timeScale);
+                    const idx = dataIdx % data.length;
+                    const val = (data[idx] / 255);
+                    const y = h / 2 - (val - 0.5) * h * volts + vOff;
+                    if (x === 0) sctx.moveTo(x, y);
+                    else sctx.lineTo(x, y);
+                }
+                sctx.stroke();
+                sctx.shadowBlur = 0;
+
+                // Labels
+                sctx.fillStyle = "#0f0";
+                sctx.font = "11px monospace";
+                sctx.fillText("CH1 - MIC", 10, 16);
+                sctx.fillText(timeScale.toFixed(1) + " ms/div", w - 100, 16);
+            }
+
+            // ── FFT ──
+            if (viewMode === "fft" || viewMode === "both") {
+                const w = fftCanvas.width = fftCanvas.clientWidth;
+                const h = fftCanvas.height;
+                const persist = +document.getElementById("persistence").value / 100;
+
+                if (persist > 0) {
+                    fctx.fillStyle = `rgba(0,0,0,${1 - persist})`;
+                    fctx.fillRect(0, 0, w, h);
+                } else {
+                    fctx.fillStyle = "#000";
+                    fctx.fillRect(0, 0, w, h);
+                }
+
+                drawGrid(fctx, w, h);
+
+                // Draw frequency bars
+                const barWidth = w / freqDomain.length * 4;
+                const color = document.getElementById("traceColor").value;
+                fctx.shadowColor = color;
+                fctx.shadowBlur = 4;
+
+                // Line mode
+                fctx.strokeStyle = color;
+                fctx.lineWidth = 1.5;
+                fctx.beginPath();
+                const maxFreq = audioCtx.sampleRate / 2;
+                for (let x = 0; x < w; x++) {
+                    // Logarithmic frequency scale
+                    const ratio = x / w;
+                    const logIdx = Math.pow(ratio, 2) * freqDomain.length;
+                    const idx = Math.min(Math.floor(logIdx), freqDomain.length - 1);
+                    const val = freqDomain[idx] / 255;
+                    const y = h - val * h;
+                    if (x === 0) fctx.moveTo(x, y);
+                    else fctx.lineTo(x, y);
+                }
+                fctx.stroke();
+                fctx.shadowBlur = 0;
+
+                // Frequency labels
+                fctx.fillStyle = "#0f0";
+                fctx.font = "10px monospace";
+                const freqs = [100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+                freqs.forEach(f => {
+                    if (f > maxFreq) return;
+                    const ratio = Math.sqrt(f / maxFreq);
+                    const x = ratio * w;
+                    fctx.fillText(f >= 1000 ? (f / 1000) + "k" : f + "", x, h - 4);
+                    fctx.strokeStyle = "rgba(0,255,0,0.15)";
+                    fctx.beginPath(); fctx.moveTo(x, 0); fctx.lineTo(x, h); fctx.stroke();
+                });
+                fctx.fillText("FFT SPECTRUM", 10, 14);
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        //  SCREENSHOT
+        // ═══════════════════════════════════════════
+        document.getElementById("btnScreenshot").onclick = () => {
+            const canvas = viewMode === "fft" ? fftCanvas : scopeCanvas;
+            const link = document.createElement("a");
+            link.download = "oscilloscope_" + Date.now() + ".png";
+            link.href = canvas.toDataURL();
+            link.click();
+        };
+
+        // ═══════════════════════════════════════════
+        //  SAVE CSV
+        // ═══════════════════════════════════════════
+        document.getElementById("btnSaveCSV").onclick = () => {
+            if (!lastWaveform) { alert("No data to save"); return; }
+            let csv = "sample,time_ms,amplitude\n";
+            const sr = audioCtx ? audioCtx.sampleRate : 44100;
+            for (let i = 0; i < lastWaveform.length; i++) {
+                csv += `${i},${(i / sr * 1000).toFixed(4)},${lastWaveform[i]}\n`;
+            }
+            const blob = new Blob([csv], { type: "text/csv" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "waveform_" + Date.now() + ".csv";
+            a.click();
+        };
+
+        // ═══════════════════════════════════════════
+        //  SAVE WAV
+        // ═══════════════════════════════════════════
+        document.getElementById("btnSaveWAV").onclick = () => {
+            if (audioBuffer.length === 0) { alert("No audio data"); return; }
+            const sr = audioCtx ? audioCtx.sampleRate : 44100;
+            const numSamples = audioBuffer.length;
+            const buffer = new ArrayBuffer(44 + numSamples * 2);
+            const view = new DataView(buffer);
+
+            function writeString(offset, str) {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            }
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + numSamples * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sr, true);
+            view.setUint32(28, sr * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, numSamples * 2, true);
+
+            for (let i = 0; i < numSamples; i++) {
+                let s = Math.max(-1, Math.min(1, audioBuffer[i]));
+                view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+
+            const blob = new Blob([buffer], { type: 'audio/wav' });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "recording_" + Date.now() + ".wav";
+            a.click();
+        };
+
+        // ═══════════════════════════════════════════
+        //  TOOLTIP ON CANVAS HOVER
+        // ═══════════════════════════════════════════
+        scopeCanvas.addEventListener("mousemove", e => {
+            if (!lastWaveform || !audioCtx) { tooltip.style.display = "none"; return; }
+            const rect = scopeCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const w = scopeCanvas.clientWidth;
+
+            const timeScale = +document.getElementById("timeDiv").value;
+            const sr = audioCtx.sampleRate;
+            const sampleIdx = Math.round(x * timeScale);
+            const timeMs = (sampleIdx / sr * 1000).toFixed(3);
+            const amplitude = lastWaveform[sampleIdx % lastWaveform.length];
+            const ampPct = ((amplitude / 255) * 100).toFixed(1);
+
+            tooltip.innerHTML = `Time: ${timeMs} ms<br>Amp: ${ampPct}%<br>Raw: ${amplitude}`;
+            tooltip.style.display = "block";
+            tooltip.style.left = (e.clientX + 15) + "px";
+            tooltip.style.top = (e.clientY + 15) + "px";
+        });
+
+        scopeCanvas.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+
+        // ═══════════════════════════════════════════
+        //  INIT TAB STATE
+        // ═══════════════════════════════════════════
+        updateTabs();
+    </script>
+</body>
+
+</html>
